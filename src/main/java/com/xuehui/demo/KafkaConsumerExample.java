@@ -7,10 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.Properties;
+import java.util.*;
 
 //Copy from http://cloudurable.com/blog/kafka-tutorial-kafka-consumer/index.html
 public class KafkaConsumerExample {
@@ -44,6 +41,8 @@ public class KafkaConsumerExample {
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         props.put(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG, requestTimeout);
 
+        //props.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 5);
+
 
         // Create the consumer using props.
         final Consumer<String, String> consumer = new KafkaConsumer<>(props);
@@ -58,9 +57,15 @@ public class KafkaConsumerExample {
 
         final int giveUp = 100;
         int noRecordsCount = 0;
+        int pullCount = 0;
 
         log.info("======run consumer1...");
         while (true) {
+//            pullCount++;
+//            if (pullCount>2){
+//                log.info("======consumer1 pull reach " + pullCount);
+//                break;
+//            }
             final ConsumerRecords<String, String> consumerRecords = consumer.poll(1000);
             if (consumerRecords.count() == 0) {
                 noRecordsCount++;
@@ -78,11 +83,13 @@ public class KafkaConsumerExample {
             while (iterator.hasNext()) {
                 ConsumerRecord<String, String> record = iterator.next();
                 log.info("======consumer1 record (partition:{}, offset:{}, key:{}, value:{})", record.partition(), record.offset(), record.key(), record.value());
-                Thread.sleep(1000);
+                //Thread.sleep(1000);
             }
+            // It's no required to commit explicitly because enable.auto.commit is enabled in consumer by default
+            // Commit offsets returned on the last {@link #poll(long) poll()} for all the subscribed list of topics and partition.
             consumer.commitAsync();
             log.info("======consumer1 commitAsync");
-            Thread.sleep(1000);
+            //Thread.sleep(1000);
         }
         consumer.close();
         log.info("======consumer1 done...");
@@ -97,6 +104,8 @@ public class KafkaConsumerExample {
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         props.put(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG, requestTimeout);
         props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
+
+        props.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 5);
 
         // Create the consumer using props.
         final Consumer<String, String> consumer = new KafkaConsumer<>(props);
@@ -115,15 +124,24 @@ public class KafkaConsumerExample {
 
         final int giveUp = 100;
         int noRecordsCount = 0;
-
+        int pullCount = 0;
         log.info("======run consumer2...");
 
         while (true) {
             if (messages == null) {
 //            log.info("{} fetching offset {} ", topic + ":" + split.getBrokers() + ":" + partition, watermark);
+                pullCount++;
+                if (pullCount > 3) {
+                    log.info("======consumer2 pull reach " + pullCount);
+                    break;
+                }
                 TopicPartition topicPartition = new TopicPartition(TOPIC, 0);
+                Set<TopicPartition> singleton = Collections.singleton(topicPartition);
+                log.info("position:{},committed:{},partStart:{},partEnd:{}", consumer.position(topicPartition), consumer.committed(topicPartition), consumer.beginningOffsets(singleton), consumer.endOffsets(singleton));
                 consumer.seek(topicPartition, watermark);
+                log.info("======consumer2 seek at  " + watermark);
                 messages = consumer.poll(1000);
+
                 log.info("======consumer2 messages size " + messages.count());
                 iterator = messages.iterator();
                 if (!iterator.hasNext()) {
@@ -134,7 +152,6 @@ public class KafkaConsumerExample {
 
             if (iterator.hasNext()) {
                 ConsumerRecord<String, String> record = iterator.next();
-
                 log.info("======consumer2 record (partition:{}, offset:{}, key:{}, value:{})", record.partition(), record.offset(), record.key(), record.value());
                 watermark = record.offset() + 1;
                 numProcessedMessages++;
@@ -144,11 +161,10 @@ public class KafkaConsumerExample {
                 }
                 //break;
             }
-
-            Thread.sleep(1000);
+//            Thread.sleep(1000);
         }
-
-        //log.info("======consumer2 done...");
+        consumer.close();
+        log.info("======consumer2 done...");
     }
 
     public static void main(String... args) throws Exception {
